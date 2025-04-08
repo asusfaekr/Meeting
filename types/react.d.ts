@@ -9,7 +9,15 @@ declare global {
 }
 
 declare module 'react' {
-  interface ChangeEvent<T = Element> {
+  export interface ChangeEvent<T = Element> {
     target: EventTarget & T;
+  }
+  
+  export interface FormEvent<T = Element> {
+    preventDefault(): void;
+  }
+  
+  export interface FC<P = {}> {
+    (props: P): JSX.Element | null;
   }
 } 

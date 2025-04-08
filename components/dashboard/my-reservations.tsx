@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react"
+import React, { useState, useMemo, useEffect } from "react"
 import { format } from "date-fns"
 import { useRouter } from "next/navigation"
 import { useSupabase } from "@supabase/auth-helpers-nextjs"
@@ -9,11 +9,27 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
 import { Loader2 } from "lucide-react"
+
+interface Reservation {
+  id: string
+  title: string
+  description: string | null
+  start_time: string
+  end_time: string
+  attendees: string[] | null
+  meeting_rooms: {
+    name: string
+  }
+}
 
 const MyReservations: React.FC = () => {
   const router = useRouter()
   const supabase = useSupabase()
+  const [loading, setLoading] = useState(true)
+  const [upcomingReservations, setUpcomingReservations] = useState<Reservation[]>([])
+  const [pastReservations, setPastReservations] = useState<Reservation[]>([])
   const [editingReservation, setEditingReservation] = useState<Reservation | null>(null)
   const [editTitle, setEditTitle] = useState("")
   const [editDescription, setEditDescription] = useState("")
@@ -35,6 +51,81 @@ const MyReservations: React.FC = () => {
     }
     return slots
   }, [])
+
+  const fetchReservations = async () => {
+    setLoading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        router.push("/login")
+        return
+      }
+
+      const now = new Date().toISOString()
+
+      const { data: reservations, error } = await supabase
+        .from("reservations")
+        .select(`
+          id,
+          title,
+          description,
+          start_time,
+          end_time,
+          attendees,
+          meeting_rooms (
+            name
+          )
+        `)
+        .eq("user_id", session.user.id)
+        .order("start_time", { ascending: true })
+
+      if (error) throw error
+
+      const upcoming = reservations.filter((r) => r.start_time >= now)
+      const past = reservations.filter((r) => r.start_time < now)
+
+      setUpcomingReservations(upcoming)
+      setPastReservations(past)
+    } catch (error) {
+      console.error("Error fetching reservations:", error)
+      toast({
+        title: "Error",
+        description: "Failed to fetch reservations. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchReservations()
+  }, [])
+
+  const handleDelete = async (id: string) => {
+    try {
+      const { error } = await supabase
+        .from("reservations")
+        .delete()
+        .eq("id", id)
+
+      if (error) throw error
+
+      toast({
+        title: "Reservation Deleted",
+        description: "Your reservation has been successfully deleted.",
+      })
+
+      fetchReservations()
+    } catch (error) {
+      console.error("Error deleting reservation:", error)
+      toast({
+        title: "Delete Failed",
+        description: "An error occurred while deleting your reservation.",
+        variant: "destructive",
+      })
+    }
+  }
 
   const handleEditClick = (reservation: Reservation) => {
     setEditingReservation(reservation)
@@ -107,6 +198,14 @@ const MyReservations: React.FC = () => {
     setEditAttendees("")
   }
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -125,7 +224,7 @@ const MyReservations: React.FC = () => {
                 <Input
                   id="editTitle"
                   value={editTitle}
-                  onChange={(e) => setEditTitle(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditTitle(e.target.value)}
                   placeholder="Weekly Team Meeting"
                   required
                   disabled={editLoading}
@@ -137,7 +236,7 @@ const MyReservations: React.FC = () => {
                 <Textarea
                   id="editDescription"
                   value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditDescription(e.target.value)}
                   placeholder="Meeting agenda and details"
                   rows={3}
                   disabled={editLoading}
@@ -156,7 +255,7 @@ const MyReservations: React.FC = () => {
                       <SelectValue placeholder="Select start time" />
                     </SelectTrigger>
                     <SelectContent>
-                      {timeSlots.map((time) => (
+                      {timeSlots.map((time: string) => (
                         <SelectItem key={`start-${time}`} value={time}>
                           {time}
                         </SelectItem>
@@ -177,8 +276,8 @@ const MyReservations: React.FC = () => {
                     </SelectTrigger>
                     <SelectContent>
                       {timeSlots
-                        .filter((time) => time > editStartTime)
-                        .map((time) => (
+                        .filter((time: string) => time > editStartTime)
+                        .map((time: string) => (
                           <SelectItem key={`end-${time}`} value={time}>
                             {time}
                           </SelectItem>
@@ -193,7 +292,7 @@ const MyReservations: React.FC = () => {
                 <Input
                   id="editAttendees"
                   value={editAttendees}
-                  onChange={(e) => setEditAttendees(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditAttendees(e.target.value)}
                   placeholder="email1@asus.com, email2@asus.com"
                   disabled={editLoading}
                 />
@@ -231,7 +330,7 @@ const MyReservations: React.FC = () => {
                   <div className="text-center py-8 text-gray-500">No upcoming reservations</div>
                 ) : (
                   <div className="space-y-4">
-                    {upcomingReservations.map((reservation) => (
+                    {upcomingReservations.map((reservation: Reservation) => (
                       <div
                         key={reservation.id}
                         className="flex items-start justify-between p-4 border rounded-lg"
@@ -295,7 +394,7 @@ const MyReservations: React.FC = () => {
                   <div className="text-center py-8 text-gray-500">No past reservations</div>
                 ) : (
                   <div className="space-y-4">
-                    {pastReservations.map((reservation) => (
+                    {pastReservations.map((reservation: Reservation) => (
                       <div
                         key={reservation.id}
                         className="flex items-start justify-between p-4 border rounded-lg"
