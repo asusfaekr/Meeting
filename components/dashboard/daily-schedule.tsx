@@ -43,14 +43,10 @@ export function DailySchedule({ reservations, rooms, selectedDate, dateString }:
     const start = new Date(reservation.start_time)
     const end = new Date(reservation.end_time)
     
-    // Convert UTC to KST
-    const startKST = new Date(start.getTime() + (9 * 60 * 60 * 1000))
-    const endKST = new Date(end.getTime() + (9 * 60 * 60 * 1000))
-    
-    const startHour = startKST.getHours()
-    const startMinute = startKST.getMinutes()
-    const endHour = endKST.getHours()
-    const endMinute = endKST.getMinutes()
+    const startHour = start.getHours()
+    const startMinute = start.getMinutes()
+    const endHour = end.getHours()
+    const endMinute = end.getMinutes()
 
     // Calculate position and width based on time
     const startPosition = ((startHour - 9) * 60 + startMinute) / (10 * 60) * 100
@@ -135,8 +131,8 @@ export function DailySchedule({ reservations, rooms, selectedDate, dateString }:
                           <div className="space-y-1">
                             <p className="font-medium">{reservation.title}</p>
                             <p className="text-xs">
-                              {format(new Date(new Date(reservation.start_time).getTime() + (9 * 60 * 60 * 1000)), "h:mm a")} -
-                              {format(new Date(new Date(reservation.end_time).getTime() + (9 * 60 * 60 * 1000)), "h:mm a")}
+                              {format(new Date(reservation.start_time), "h:mm a")} -
+                              {format(new Date(reservation.end_time), "h:mm a")}
                             </p>
                             <p className="text-xs">
                               Booked by: {reservation.users.first_name} {reservation.users.last_name}
