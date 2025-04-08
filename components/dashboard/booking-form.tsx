@@ -51,6 +51,7 @@ export function BookingForm({
   const [timeSlotAvailable, setTimeSlotAvailable] = useState(true)
   const [checkingAvailability, setCheckingAvailability] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
+  const [availableRooms, setAvailableRooms] = useState<Room[]>([])
 
   // Sync with server-provided date on initial load
   useEffect(() => {
@@ -340,6 +341,71 @@ export function BookingForm({
       setLoading(false)
     }
   }
+
+  // Add this function to check if a room is available for a specific time slot
+  const isRoomAvailable = async (roomId: string, startTime: string, endTime: string) => {
+    try {
+      const [startHour, startMinute] = startTime.split(":").map(Number)
+      const [endHour, endMinute] = endTime.split(":").map(Number)
+
+      const startDateTime = new Date(selectedDate)
+      startDateTime.setHours(startHour, startMinute, 0, 0)
+
+      const endDateTime = new Date(selectedDate)
+      endDateTime.setHours(endHour, endMinute, 0, 0)
+
+      const { data: reservations, error } = await supabase
+        .from("reservations")
+        .select("*")
+        .eq("room_id", roomId)
+        .gte("start_time", startDateTime.toISOString())
+        .lte("end_time", endDateTime.toISOString())
+
+      if (error) throw error
+
+      return checkTimeSlotAvailability(startTime, endTime, reservations || [])
+    } catch (error) {
+      console.error("Error checking room availability:", error)
+      return false
+    }
+  }
+
+  // Update the useEffect for fetching available rooms
+  useEffect(() => {
+    const fetchAvailableRooms = async () => {
+      if (!startTime || !endTime) return
+
+      setLoading(true)
+      try {
+        const { data: rooms, error } = await supabase
+          .from("meeting_rooms")
+          .select("*")
+          .order("name", { ascending: true })
+
+        if (error) throw error
+
+        const availableRooms = await Promise.all(
+          rooms.map(async (room) => {
+            const isAvailable = await isRoomAvailable(room.id, startTime, endTime)
+            return { ...room, isAvailable }
+          })
+        )
+
+        setAvailableRooms(availableRooms.filter(room => room.isAvailable))
+      } catch (error) {
+        console.error("Error fetching available rooms:", error)
+        toast({
+          title: "Error",
+          description: "Failed to fetch available rooms. Please try again.",
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchAvailableRooms()
+  }, [startTime, endTime, selectedDate])
 
   return (
     <Card className="p-6">

@@ -86,9 +86,15 @@ const MyReservations: React.FC = () => {
 
       console.log("Fetched reservations:", reservations)
 
+      if (!reservations || reservations.length === 0) {
+        setUpcomingReservations([])
+        setPastReservations([])
+        return
+      }
+
       const now = new Date().toISOString()
-      const upcoming = reservations.filter((r: Reservation) => r.start_time >= now)
-      const past = reservations.filter((r: Reservation) => r.start_time < now)
+      const upcoming = reservations.filter((r: Reservation) => new Date(r.start_time) >= new Date(now))
+      const past = reservations.filter((r: Reservation) => new Date(r.start_time) < new Date(now))
 
       console.log("Upcoming reservations:", upcoming)
       console.log("Past reservations:", past)
