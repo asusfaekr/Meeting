@@ -39,10 +39,7 @@ export default function MyReservations() {
   const [editAttendees, setEditAttendees] = useState("")
   const [editLoading, setEditLoading] = useState(false)
 
-  // Supabase 클라이언트 초기화 방식 변경
   const supabase = createClientComponentClient()
-
-  console.log("MyReservations 컴포넌트가 렌더링되었습니다.")
 
   // Time slot options (30-minute intervals from 8:00 to 18:00)
   const timeSlots = useMemo(() => {
@@ -58,41 +55,21 @@ export default function MyReservations() {
     return slots
   }, [])
 
-  // 페이지 로드 시 즉시 데이터 가져오기
   useEffect(() => {
-    console.log("useEffect가 실행되었습니다. 데이터를 가져옵니다.")
     fetchReservations()
   }, [])
 
   const fetchReservations = async () => {
-    console.log("fetchReservations 함수가 호출되었습니다.")
     setLoading(true)
     try {
-      // 세션 확인 전에 Supabase 상태 로깅
-      console.log("Supabase 클라이언트 상태:", supabase)
-      
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
-      const session = sessionData?.session
-      console.log("세션 정보:", session ? "세션 있음" : "세션 없음")
-      console.log("세션 에러:", sessionError)
-      
-      if (sessionError) {
-        console.error("세션 에러 발생:", sessionError)
-        throw sessionError
-      }
+      const { data: { session } } = await supabase.auth.getSession()
       
       if (!session) {
-        console.log("세션이 없습니다. 로그인 페이지로 이동합니다.")
         router.push("/login")
         return
       }
 
-      console.log("현재 로그인된 사용자 ID:", session.user.id)
-
-      // 쿼리 실행 전 로깅
-      console.log("예약 데이터 조회 시작...")
-      
-      const { data: reservations, error: reservationsError } = await supabase
+      const { data: reservations, error } = await supabase
         .from("reservations")
         .select(`
           id,
@@ -108,48 +85,22 @@ export default function MyReservations() {
         .eq("user_id", session.user.id)
         .order("start_time", { ascending: true })
 
-      if (reservationsError) {
-        console.error("예약 데이터 조회 중 오류 발생:", reservationsError)
-        throw reservationsError
-      }
-
-      console.log("=== 예약 데이터 디버깅 정보 ===")
-      console.log("전체 예약 데이터:", reservations)
-      console.log("예약 개수:", reservations?.length || 0)
+      if (error) throw error
 
       if (!reservations || reservations.length === 0) {
-        console.log("예약 데이터가 없습니다.")
         setUpcomingReservations([])
         setPastReservations([])
         return
       }
 
-      const now = new Date().toISOString()
-      console.log("현재 시간:", now)
-
-      const upcoming = reservations.filter((r: Reservation) => new Date(r.start_time) >= new Date(now))
-      const past = reservations.filter((r: Reservation) => new Date(r.start_time) < new Date(now))
-
-      console.log("=== 예약 분류 결과 ===")
-      console.log("예정된 예약:", upcoming.map(r => ({
-        id: r.id,
-        title: r.title,
-        room: r.meeting_rooms.name,
-        start: r.start_time,
-        end: r.end_time
-      })))
-      console.log("지난 예약:", past.map(r => ({
-        id: r.id,
-        title: r.title,
-        room: r.meeting_rooms.name,
-        start: r.start_time,
-        end: r.end_time
-      })))
+      const now = new Date()
+      const upcoming = reservations.filter((r: Reservation) => new Date(r.start_time) >= now)
+      const past = reservations.filter((r: Reservation) => new Date(r.start_time) < now)
 
       setUpcomingReservations(upcoming)
       setPastReservations(past)
     } catch (error) {
-      console.error("예약 데이터 처리 중 오류 발생:", error)
+      console.error("Error fetching reservations:", error)
       toast({
         title: "Error",
         description: "Failed to fetch reservations. Please try again.",
