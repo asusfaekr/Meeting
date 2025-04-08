@@ -69,6 +69,11 @@ export default function MyReservations() {
         return
       }
 
+      // 한국 시간대로 현재 시간 설정
+      const now = new Date()
+      const kstOffset = 9 * 60 * 60 * 1000 // KST는 UTC+9
+      const kstNow = new Date(now.getTime() + kstOffset)
+
       const { data: reservations, error } = await supabase
         .from("reservations")
         .select(`
@@ -93,9 +98,18 @@ export default function MyReservations() {
         return
       }
 
-      const now = new Date()
-      const upcoming = reservations.filter((r: Reservation) => new Date(r.start_time) >= now)
-      const past = reservations.filter((r: Reservation) => new Date(r.start_time) < now)
+      // 한국 시간 기준으로 예약 분류
+      const upcoming = reservations.filter((r: Reservation) => {
+        const reservationTime = new Date(r.start_time)
+        const kstReservationTime = new Date(reservationTime.getTime() + kstOffset)
+        return kstReservationTime >= kstNow
+      })
+
+      const past = reservations.filter((r: Reservation) => {
+        const reservationTime = new Date(r.start_time)
+        const kstReservationTime = new Date(reservationTime.getTime() + kstOffset)
+        return kstReservationTime < kstNow
+      })
 
       setUpcomingReservations(upcoming)
       setPastReservations(past)

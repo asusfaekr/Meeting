@@ -43,8 +43,43 @@ export function BookingForm({
   const [title, setTitle] = useState("")
   const [description, setDescription] = useState("")
   const [roomId, setRoomId] = useState(selectedRoomId || "")
-  const [startTime, setStartTime] = useState(initialStartTime)
-  const [endTime, setEndTime] = useState(initialEndTime)
+  const [startTime, setStartTime] = useState(() => {
+    const now = new Date()
+    const minutes = now.getMinutes()
+    const roundedMinutes = Math.ceil(minutes / 30) * 30
+    const hours = now.getHours()
+    
+    // 30분이 넘어가면 다음 시간으로 설정
+    if (roundedMinutes === 60) {
+      now.setHours(hours + 1)
+      now.setMinutes(0)
+    } else {
+      now.setMinutes(roundedMinutes)
+    }
+    
+    return format(now, "HH:mm")
+  })
+
+  const [endTime, setEndTime] = useState(() => {
+    const now = new Date()
+    const minutes = now.getMinutes()
+    const roundedMinutes = Math.ceil(minutes / 30) * 30
+    const hours = now.getHours()
+    
+    // 30분이 넘어가면 다음 시간으로 설정
+    if (roundedMinutes === 60) {
+      now.setHours(hours + 1)
+      now.setMinutes(0)
+    } else {
+      now.setMinutes(roundedMinutes)
+    }
+    
+    // 종료 시간은 시작 시간에서 1시간 후
+    now.setHours(now.getHours() + 1)
+    
+    return format(now, "HH:mm")
+  })
+
   const [attendees, setAttendees] = useState("")
   const [loading, setLoading] = useState(false)
   const [existingReservations, setExistingReservations] = useState<any[]>([])
