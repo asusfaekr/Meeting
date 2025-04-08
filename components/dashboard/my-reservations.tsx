@@ -25,12 +25,12 @@ interface Reservation {
   }
 }
 
-const MyReservations: React.FC = () => {
+export default function MyReservations() {
   const router = useRouter()
-  const supabase = createClientComponentClient()
-  const [loading, setLoading] = useState(true)
+  const { toast } = useToast()
   const [upcomingReservations, setUpcomingReservations] = useState<Reservation[]>([])
   const [pastReservations, setPastReservations] = useState<Reservation[]>([])
+  const [loading, setLoading] = useState(true)
   const [editingReservation, setEditingReservation] = useState<Reservation | null>(null)
   const [editTitle, setEditTitle] = useState("")
   const [editDescription, setEditDescription] = useState("")
@@ -38,7 +38,9 @@ const MyReservations: React.FC = () => {
   const [editEndTime, setEditEndTime] = useState("")
   const [editAttendees, setEditAttendees] = useState("")
   const [editLoading, setEditLoading] = useState(false)
-  const { toast: useToastToast } = useToast()
+
+  // Supabase 클라이언트 초기화 방식 변경
+  const supabase = createClientComponentClient()
 
   console.log("MyReservations 컴포넌트가 렌더링되었습니다.")
 
@@ -66,8 +68,18 @@ const MyReservations: React.FC = () => {
     console.log("fetchReservations 함수가 호출되었습니다.")
     setLoading(true)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      // 세션 확인 전에 Supabase 상태 로깅
+      console.log("Supabase 클라이언트 상태:", supabase)
+      
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+      const session = sessionData?.session
       console.log("세션 정보:", session ? "세션 있음" : "세션 없음")
+      console.log("세션 에러:", sessionError)
+      
+      if (sessionError) {
+        console.error("세션 에러 발생:", sessionError)
+        throw sessionError
+      }
       
       if (!session) {
         console.log("세션이 없습니다. 로그인 페이지로 이동합니다.")
@@ -77,7 +89,10 @@ const MyReservations: React.FC = () => {
 
       console.log("현재 로그인된 사용자 ID:", session.user.id)
 
-      const { data: reservations, error } = await supabase
+      // 쿼리 실행 전 로깅
+      console.log("예약 데이터 조회 시작...")
+      
+      const { data: reservations, error: reservationsError } = await supabase
         .from("reservations")
         .select(`
           id,
@@ -93,9 +108,9 @@ const MyReservations: React.FC = () => {
         .eq("user_id", session.user.id)
         .order("start_time", { ascending: true })
 
-      if (error) {
-        console.error("예약 데이터 조회 중 오류 발생:", error)
-        throw error
+      if (reservationsError) {
+        console.error("예약 데이터 조회 중 오류 발생:", reservationsError)
+        throw reservationsError
       }
 
       console.log("=== 예약 데이터 디버깅 정보 ===")
@@ -135,7 +150,7 @@ const MyReservations: React.FC = () => {
       setPastReservations(past)
     } catch (error) {
       console.error("예약 데이터 처리 중 오류 발생:", error)
-      useToastToast({
+      toast({
         title: "Error",
         description: "Failed to fetch reservations. Please try again.",
         variant: "destructive",
@@ -474,6 +489,4 @@ const MyReservations: React.FC = () => {
       )}
     </div>
   )
-}
-
-export default MyReservations 
+} 
