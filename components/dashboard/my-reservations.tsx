@@ -57,11 +57,12 @@ const MyReservations: React.FC = () => {
     try {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
+        console.log("세션이 없습니다. 로그인 페이지로 이동합니다.")
         router.push("/login")
         return
       }
 
-      console.log("Fetching reservations for user:", session.user.id)
+      console.log("현재 로그인된 사용자 ID:", session.user.id)
 
       const { data: reservations, error } = await supabase
         .from("reservations")
@@ -80,29 +81,47 @@ const MyReservations: React.FC = () => {
         .order("start_time", { ascending: true })
 
       if (error) {
-        console.error("Error fetching reservations:", error)
+        console.error("예약 데이터 조회 중 오류 발생:", error)
         throw error
       }
 
-      console.log("Fetched reservations:", reservations)
+      console.log("=== 예약 데이터 디버깅 정보 ===")
+      console.log("전체 예약 데이터:", reservations)
+      console.log("예약 개수:", reservations?.length || 0)
 
       if (!reservations || reservations.length === 0) {
+        console.log("예약 데이터가 없습니다.")
         setUpcomingReservations([])
         setPastReservations([])
         return
       }
 
       const now = new Date().toISOString()
+      console.log("현재 시간:", now)
+
       const upcoming = reservations.filter((r: Reservation) => new Date(r.start_time) >= new Date(now))
       const past = reservations.filter((r: Reservation) => new Date(r.start_time) < new Date(now))
 
-      console.log("Upcoming reservations:", upcoming)
-      console.log("Past reservations:", past)
+      console.log("=== 예약 분류 결과 ===")
+      console.log("예정된 예약:", upcoming.map(r => ({
+        id: r.id,
+        title: r.title,
+        room: r.meeting_rooms.name,
+        start: r.start_time,
+        end: r.end_time
+      })))
+      console.log("지난 예약:", past.map(r => ({
+        id: r.id,
+        title: r.title,
+        room: r.meeting_rooms.name,
+        start: r.start_time,
+        end: r.end_time
+      })))
 
       setUpcomingReservations(upcoming)
       setPastReservations(past)
     } catch (error) {
-      console.error("Error fetching reservations:", error)
+      console.error("예약 데이터 처리 중 오류 발생:", error)
       toast({
         title: "Error",
         description: "Failed to fetch reservations. Please try again.",
