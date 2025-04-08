@@ -160,6 +160,55 @@ export function BookingForm({
     return true
   }
 
+  const checkAvailability = async () => {
+    if (!roomId || !startTime || !endTime) return
+
+    setCheckingAvailability(true)
+    setTimeSlotAvailable(true)
+
+    try {
+      const [startHour, startMinute] = startTime.split(":").map(Number)
+      const [endHour, endMinute] = endTime.split(":").map(Number)
+
+      // Create dates in KST
+      const startDateTime = new Date(selectedDate)
+      startDateTime.setHours(startHour, startMinute, 0, 0)
+
+      const endDateTime = new Date(selectedDate)
+      endDateTime.setHours(endHour, endMinute, 0, 0)
+
+      // Check for overlapping reservations
+      const { data: reservations, error } = await supabase
+        .from("reservations")
+        .select("*")
+        .eq("room_id", roomId)
+        .gte("start_time", startDateTime.toISOString())
+        .lte("end_time", endDateTime.toISOString())
+
+      if (error) throw error
+
+      const isAvailable = checkTimeSlotAvailability(startTime, endTime, reservations || [])
+      setTimeSlotAvailable(isAvailable)
+
+      if (!isAvailable) {
+        toast({
+          title: "Time Slot Unavailable",
+          description: "This time slot is already booked.",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Error checking availability:", error)
+      toast({
+        title: "Error",
+        description: "Failed to check availability. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setCheckingAvailability(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 

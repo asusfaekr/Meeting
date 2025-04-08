@@ -13,4 +13,5 @@ declare module 'lucide-react' {
   export const Check: FC<IconProps>
   export const X: FC<IconProps>
   export const AlertCircle: FC<IconProps>
+  export const Loader2: React.FC<{ className?: string }>;
 } 

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from "react"
 import { format } from "date-fns"
 import { useRouter } from "next/navigation"
-import { useSupabase } from "@supabase/auth-helpers-nextjs"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { toast } from "react-hot-toast"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -26,7 +26,7 @@ interface Reservation {
 
 const MyReservations: React.FC = () => {
   const router = useRouter()
-  const supabase = useSupabase()
+  const supabase = createClientComponentClient()
   const [loading, setLoading] = useState(true)
   const [upcomingReservations, setUpcomingReservations] = useState<Reservation[]>([])
   const [pastReservations, setPastReservations] = useState<Reservation[]>([])
@@ -81,8 +81,8 @@ const MyReservations: React.FC = () => {
 
       if (error) throw error
 
-      const upcoming = reservations.filter((r) => r.start_time >= now)
-      const past = reservations.filter((r) => r.start_time < now)
+      const upcoming = reservations.filter((r: Reservation) => r.start_time >= now)
+      const past = reservations.filter((r: Reservation) => r.start_time < now)
 
       setUpcomingReservations(upcoming)
       setPastReservations(past)
