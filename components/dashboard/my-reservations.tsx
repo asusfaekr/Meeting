@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Loader2 } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
 
 interface Reservation {
   id: string
@@ -37,6 +38,9 @@ const MyReservations: React.FC = () => {
   const [editEndTime, setEditEndTime] = useState("")
   const [editAttendees, setEditAttendees] = useState("")
   const [editLoading, setEditLoading] = useState(false)
+  const { toast: useToastToast } = useToast()
+
+  console.log("MyReservations 컴포넌트가 렌더링되었습니다.")
 
   // Time slot options (30-minute intervals from 8:00 to 18:00)
   const timeSlots = useMemo(() => {
@@ -52,10 +56,19 @@ const MyReservations: React.FC = () => {
     return slots
   }, [])
 
+  // 페이지 로드 시 즉시 데이터 가져오기
+  useEffect(() => {
+    console.log("useEffect가 실행되었습니다. 데이터를 가져옵니다.")
+    fetchReservations()
+  }, [])
+
   const fetchReservations = async () => {
+    console.log("fetchReservations 함수가 호출되었습니다.")
     setLoading(true)
     try {
       const { data: { session } } = await supabase.auth.getSession()
+      console.log("세션 정보:", session ? "세션 있음" : "세션 없음")
+      
       if (!session) {
         console.log("세션이 없습니다. 로그인 페이지로 이동합니다.")
         router.push("/login")
@@ -122,7 +135,7 @@ const MyReservations: React.FC = () => {
       setPastReservations(past)
     } catch (error) {
       console.error("예약 데이터 처리 중 오류 발생:", error)
-      toast({
+      useToastToast({
         title: "Error",
         description: "Failed to fetch reservations. Please try again.",
         variant: "destructive",
@@ -131,10 +144,6 @@ const MyReservations: React.FC = () => {
       setLoading(false)
     }
   }
-
-  useEffect(() => {
-    fetchReservations()
-  }, [])
 
   const handleDelete = async (id: string) => {
     try {
