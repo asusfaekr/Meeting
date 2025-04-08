@@ -198,19 +198,22 @@ export function BookingForm({
       const [startHour, startMinute] = startTime.split(":").map(Number)
       const [endHour, endMinute] = endTime.split(":").map(Number)
 
+      // Create dates in KST (UTC+9)
       const startDateTime = new Date(selectedDate)
       startDateTime.setHours(startHour, startMinute, 0, 0)
+      const startDateTimeUTC = new Date(startDateTime.getTime() - (9 * 60 * 60 * 1000))
 
       const endDateTime = new Date(selectedDate)
       endDateTime.setHours(endHour, endMinute, 0, 0)
+      const endDateTimeUTC = new Date(endDateTime.getTime() - (9 * 60 * 60 * 1000))
 
       // Double-check for overlapping reservations
       const { data: latestReservations, error: reservationError } = await supabase
         .from("reservations")
         .select("*")
         .eq("room_id", roomId)
-        .gte("start_time", startDateTime.toISOString())
-        .lte("end_time", endDateTime.toISOString())
+        .gte("start_time", startDateTimeUTC.toISOString())
+        .lte("end_time", endDateTimeUTC.toISOString())
 
       if (reservationError) throw reservationError
 
@@ -237,8 +240,8 @@ export function BookingForm({
         user_id: session.user.id,
         title,
         description,
-        start_time: startDateTime.toISOString(),
-        end_time: endDateTime.toISOString(),
+        start_time: startDateTimeUTC.toISOString(),
+        end_time: endDateTimeUTC.toISOString(),
         attendees: attendeesList,
         status: "confirmed"
       })
