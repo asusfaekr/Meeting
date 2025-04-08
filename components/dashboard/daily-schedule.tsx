@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { format, parseISO } from "date-fns"
+import { format } from "date-fns"
 
 interface Room {
   id: string
@@ -40,8 +40,8 @@ export function DailySchedule({ reservations, rooms, selectedDate, dateString }:
 
   // Calculate position and width for a reservation bar
   const getReservationStyle = (reservation: Reservation) => {
-    const startTime = parseISO(reservation.start_time)
-    const endTime = parseISO(reservation.end_time)
+    const startTime = new Date(reservation.start_time)
+    const endTime = new Date(reservation.end_time)
 
     const startHour = startTime.getHours() + startTime.getMinutes() / 60
     const endHour = endTime.getHours() + endTime.getMinutes() / 60
@@ -67,7 +67,7 @@ export function DailySchedule({ reservations, rooms, selectedDate, dateString }:
     return map
   }, [rooms, reservations])
 
-  // Format the date for display, using the dateString to avoid timezone issues
+  // Format the date for display
   const displayDate = useMemo(() => {
     const date = new Date(`${dateString}T00:00:00`)
     return format(date, "EEEE, MMMM d, yyyy")
@@ -76,7 +76,7 @@ export function DailySchedule({ reservations, rooms, selectedDate, dateString }:
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Schedule for {displayDate}</CardTitle>
+        <CardTitle>{displayDate} Schedule</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="relative">
@@ -84,7 +84,7 @@ export function DailySchedule({ reservations, rooms, selectedDate, dateString }:
           <div className="flex border-b mb-2">
             <div className="w-32"></div>
             <div className="flex-1 flex">
-              {hours.map((hour) => (
+              {hours.map((hour: number) => (
                 <div key={hour} className="flex-1 text-center text-xs text-gray-500">
                   {hour}:00
                 </div>
@@ -101,7 +101,7 @@ export function DailySchedule({ reservations, rooms, selectedDate, dateString }:
                 <div className="w-32 font-medium truncate pr-2">{room.name}</div>
                 <div className="flex-1 relative h-8 bg-gray-100 rounded">
                   {/* Time grid lines */}
-                  {hours.map((hour, index) => (
+                  {hours.map((hour: number, index: number) => (
                     <div
                       key={hour}
                       className={`absolute top-0 bottom-0 w-px bg-gray-300 ${index === 0 ? "left-0" : ""}`}
@@ -110,7 +110,7 @@ export function DailySchedule({ reservations, rooms, selectedDate, dateString }:
                   ))}
 
                   <TooltipProvider>
-                    {roomReservations.map((reservation) => (
+                    {roomReservations.map((reservation: Reservation) => (
                       <Tooltip key={reservation.id}>
                         <TooltipTrigger asChild>
                           <div
@@ -127,8 +127,8 @@ export function DailySchedule({ reservations, rooms, selectedDate, dateString }:
                           <div className="space-y-1">
                             <p className="font-medium">{reservation.title}</p>
                             <p className="text-xs">
-                              {format(parseISO(reservation.start_time), "h:mm a")} -
-                              {format(parseISO(reservation.end_time), "h:mm a")}
+                              {format(new Date(reservation.start_time), "h:mm a")} -
+                              {format(new Date(reservation.end_time), "h:mm a")}
                             </p>
                             <p className="text-xs">
                               Booked by: {reservation.users.first_name} {reservation.users.last_name}

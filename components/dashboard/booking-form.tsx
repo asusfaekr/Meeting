@@ -1,8 +1,6 @@
 "use client"
 
-import type React from "react"
-
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useSupabase } from "@/lib/supabase-provider"
 import { useToast } from "@/hooks/use-toast"
 import { useDate } from "@/contexts/date-context"
@@ -60,16 +58,18 @@ export function BookingForm({
   }, [initialDate, setSelectedDate])
 
   // Time slot options (30-minute intervals from 8:00 to 18:00)
-  const timeSlots = []
-  for (let hour = 8; hour <= 18; hour++) {
-    for (let minute = 0; minute < 60; minute += 30) {
-      if (hour === 18 && minute > 0) continue // Don't go past 18:00
-
-      const formattedHour = hour.toString().padStart(2, "0")
-      const formattedMinute = minute.toString().padStart(2, "0")
-      timeSlots.push(`${formattedHour}:${formattedMinute}`)
+  const timeSlots = useMemo(() => {
+    const slots: string[] = []
+    for (let hour = 8; hour <= 18; hour++) {
+      for (let minute = 0; minute < 60; minute += 30) {
+        if (hour === 18 && minute > 0) continue // Don't go past 18:00
+        const formattedHour = hour.toString().padStart(2, "0")
+        const formattedMinute = minute.toString().padStart(2, "0")
+        slots.push(`${formattedHour}:${formattedMinute}`)
+      }
     }
-  }
+    return slots
+  }, [])
 
   // Fetch existing reservations for the selected date and room
   useEffect(() => {
@@ -79,7 +79,6 @@ export function BookingForm({
       setCheckingAvailability(true)
 
       try {
-        // Create date range for the selected date
         const startOfDay = new Date(selectedDate)
         startOfDay.setHours(0, 0, 0, 0)
 
@@ -93,20 +92,16 @@ export function BookingForm({
           .gte("start_time", startOfDay.toISOString())
           .lte("end_time", endOfDay.toISOString())
 
-        if (error) {
-          throw error
-        }
+        if (error) throw error
 
         setExistingReservations(data || [])
-
-        // Check if the current time slot is available
         const available = checkTimeSlotAvailability(startTime, endTime, data || [])
         setTimeSlotAvailable(available)
       } catch (error) {
         console.error("Error fetching reservations:", error)
         toast({
-          title: "Error checking availability",
-          description: "Could not verify room availability. Please try again.",
+          title: "Unable to check availability",
+          description: "Unable to check meeting room availability. Please try again later.",
           variant: "destructive",
         })
       } finally {
@@ -121,7 +116,6 @@ export function BookingForm({
   const checkTimeSlotAvailability = (start: string, end: string, reservations: any[]) => {
     if (!roomId || reservations.length === 0) return true
 
-    // Convert form times to Date objects
     const [startHour, startMinute] = start.split(":").map(Number)
     const [endHour, endMinute] = end.split(":").map(Number)
 
@@ -131,12 +125,9 @@ export function BookingForm({
     const endDateTime = new Date(selectedDate)
     endDateTime.setHours(endHour, endMinute, 0, 0)
 
-    // Check for overlaps with existing reservations
     return !reservations.some((reservation) => {
       const reservationStart = new Date(reservation.start_time)
       const reservationEnd = new Date(reservation.end_time)
-
-      // Check for overlap
       return startDateTime < reservationEnd && endDateTime > reservationStart
     })
   }
@@ -161,7 +152,7 @@ export function BookingForm({
     }
 
     if (!timeSlotAvailable) {
-      setValidationError("The selected time slot is already booked")
+      setValidationError("This time slot is already booked")
       return false
     }
 
@@ -172,40 +163,38 @@ export function BookingForm({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    if (!validateForm()) {
-      return
-    }
+    if (!validateForm()) return
 
     setLoading(true)
 
     try {
-      // Check if user is still authenticated
-      const { data: sessionData } = await supabase.auth.getSession()
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession()
 
-      if (!sessionData.session) {
-        // If session is lost, save booking data to localStorage and redirect to login
-        const bookingData = {
-          roomId,
-          title,
-          description,
-          startTime,
-          endTime,
-          attendees,
-          selectedDate: selectedDate.toISOString(),
-        }
-
-        localStorage.setItem("pendingBooking", JSON.stringify(bookingData))
-
+      if (sessionError || !session) {
         toast({
-          title: "Session expired",
-          description: "Please log in again to complete your booking",
+          title: "Authentication Error",
+          description: "Please log in to continue.",
+          variant: "destructive",
         })
-
-        window.location.href = "/"
         return
       }
 
-      // Convert form times to ISO strings
+      // Verify user exists in the database
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id')
+        .eq('id', session.user.id)
+        .single()
+
+      if (userError || !userData) {
+        toast({
+          title: "User Error",
+          description: "User information not found. Please contact administrator.",
+          variant: "destructive",
+        })
+        return
+      }
+
       const [startHour, startMinute] = startTime.split(":").map(Number)
       const [endHour, endMinute] = endTime.split(":").map(Number)
 
@@ -215,20 +204,22 @@ export function BookingForm({
       const endDateTime = new Date(selectedDate)
       endDateTime.setHours(endHour, endMinute, 0, 0)
 
-      // Double-check for overlapping reservations (prevent race conditions)
-      const { data: latestReservations } = await supabase
+      // Double-check for overlapping reservations
+      const { data: latestReservations, error: reservationError } = await supabase
         .from("reservations")
         .select("*")
         .eq("room_id", roomId)
-        .gte("start_time", startDateTime.toISOString().split("T")[0])
-        .lte("end_time", endDateTime.toISOString().split("T")[0] + "T23:59:59.999Z")
+        .gte("start_time", startDateTime.toISOString())
+        .lte("end_time", endDateTime.toISOString())
+
+      if (reservationError) throw reservationError
 
       const isAvailable = checkTimeSlotAvailability(startTime, endTime, latestReservations || [])
 
       if (!isAvailable) {
         toast({
-          title: "Time slot unavailable",
-          description: "This time slot was just booked by someone else",
+          title: "Time Slot Unavailable",
+          description: "This time slot is already booked.",
           variant: "destructive",
         })
         setTimeSlotAvailable(false)
@@ -236,46 +227,43 @@ export function BookingForm({
         return
       }
 
-      // Parse attendees into an array
       const attendeesList = attendees
         .split(",")
-        .map((email) => email.trim())
-        .filter((email) => email)
+        .map((email: string) => email.trim())
+        .filter((email: string) => email)
 
-      const { error } = await supabase.from("reservations").insert({
+      const { error: insertError } = await supabase.from("reservations").insert({
         room_id: roomId,
-        user_id: userId,
+        user_id: session.user.id,
         title,
         description,
         start_time: startDateTime.toISOString(),
         end_time: endDateTime.toISOString(),
-        attendees: attendeesList.length > 0 ? attendeesList : null,
-        status: "confirmed",
+        attendees: attendeesList,
+        status: "confirmed"
       })
 
-      if (error) throw error
+      if (insertError) throw insertError
 
       toast({
-        title: "Reservation created",
-        description: "Your meeting room has been booked successfully",
+        title: "Booking Successful",
+        description: "Meeting room has been successfully booked.",
       })
 
-      // Use direct navigation for more reliable redirect
-      window.location.href = "/dashboard"
-    } catch (error: any) {
+      // Reset form
+      setTitle("")
+      setDescription("")
+      setAttendees("")
+      setLoading(false)
+    } catch (error) {
+      console.error("Error creating reservation:", error)
       toast({
-        title: "Error creating reservation",
-        description: error.message,
+        title: "Booking Failed",
+        description: "An error occurred while booking. Please try again.",
         variant: "destructive",
       })
-    } finally {
       setLoading(false)
     }
-  }
-
-  // Simple function to handle cancel without hooks
-  function handleCancel() {
-    window.location.href = "/dashboard"
   }
 
   return (
@@ -294,15 +282,14 @@ export function BookingForm({
             <Label htmlFor="room">Meeting Room</Label>
             <Select
               value={roomId}
-              onValueChange={(value) => {
+              onValueChange={(value: string) => {
                 setRoomId(value)
-                // Reset availability when room changes
                 setTimeSlotAvailable(true)
               }}
               disabled={loading}
             >
               <SelectTrigger id="room">
-                <SelectValue placeholder="Select a room" />
+                <SelectValue placeholder="Select a meeting room" />
               </SelectTrigger>
               <SelectContent>
                 {rooms.map((room) => (
@@ -319,7 +306,7 @@ export function BookingForm({
             <Input
               id="title"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTitle(e.target.value)}
               placeholder="Weekly Team Meeting"
               required
               disabled={loading}
@@ -331,7 +318,7 @@ export function BookingForm({
             <Textarea
               id="description"
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setDescription(e.target.value)}
               placeholder="Meeting agenda and details"
               rows={3}
               disabled={loading}
@@ -343,16 +330,12 @@ export function BookingForm({
               <Label htmlFor="startTime">Start Time</Label>
               <Select
                 value={startTime}
-                onValueChange={(value) => {
+                onValueChange={(value: string) => {
                   setStartTime(value)
-
-                  // Auto-set end time to be 1 hour after start time
                   const [hour, minute] = value.split(":").map(Number)
                   const startDate = setHours(setMinutes(new Date(), minute), hour)
                   const endDate = addMinutes(startDate, 60)
                   const newEndTime = format(endDate, "HH:mm")
-
-                  // Only update if the new end time is valid
                   if (timeSlots.includes(newEndTime)) {
                     setEndTime(newEndTime)
                   }
@@ -363,7 +346,7 @@ export function BookingForm({
                   <SelectValue placeholder="Select start time" />
                 </SelectTrigger>
                 <SelectContent>
-                  {timeSlots.map((time) => (
+                  {timeSlots.map((time: string) => (
                     <SelectItem key={`start-${time}`} value={time}>
                       {time}
                     </SelectItem>
@@ -380,8 +363,8 @@ export function BookingForm({
                 </SelectTrigger>
                 <SelectContent>
                   {timeSlots
-                    .filter((time) => time > startTime)
-                    .map((time) => (
+                    .filter((time: string) => time > startTime)
+                    .map((time: string) => (
                       <SelectItem key={`end-${time}`} value={time}>
                         {time}
                       </SelectItem>
@@ -401,9 +384,9 @@ export function BookingForm({
           {roomId && !timeSlotAvailable && !checkingAvailability && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
-              <AlertTitle>Time slot unavailable</AlertTitle>
+              <AlertTitle>Time Slot Unavailable</AlertTitle>
               <AlertDescription>
-                This room is already booked for the selected time. Please choose a different time or room.
+                This time slot is already booked. Please select a different time or room.
               </AlertDescription>
             </Alert>
           )}
@@ -413,7 +396,7 @@ export function BookingForm({
             <Input
               id="attendees"
               value={attendees}
-              onChange={(e) => setAttendees(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAttendees(e.target.value)}
               placeholder="email1@asus.com, email2@asus.com"
               disabled={loading}
             />
@@ -422,17 +405,17 @@ export function BookingForm({
         </div>
 
         <div className="flex justify-end space-x-4">
-          <Button type="button" variant="outline" onClick={handleCancel} disabled={loading}>
+          <Button type="button" variant="outline" onClick={() => window.location.href = "/dashboard"} disabled={loading}>
             Cancel
           </Button>
           <Button type="submit" disabled={loading || (roomId && !timeSlotAvailable) || checkingAvailability}>
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Creating Reservation...
+                Booking...
               </>
             ) : (
-              "Book Room"
+              "Book Now"
             )}
           </Button>
         </div>
