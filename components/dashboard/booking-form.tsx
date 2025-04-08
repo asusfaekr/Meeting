@@ -177,6 +177,12 @@ export function BookingForm({
       const endDateTime = new Date(selectedDate)
       endDateTime.setHours(endHour, endMinute, 0, 0)
 
+      console.log("Checking availability for:", {
+        roomId,
+        startDateTime: startDateTime.toISOString(),
+        endDateTime: endDateTime.toISOString()
+      })
+
       // Check for overlapping reservations
       const { data: reservations, error } = await supabase
         .from("reservations")
@@ -185,7 +191,12 @@ export function BookingForm({
         .gte("start_time", startDateTime.toISOString())
         .lte("end_time", endDateTime.toISOString())
 
-      if (error) throw error
+      if (error) {
+        console.error("Error checking availability:", error)
+        throw error
+      }
+
+      console.log("Found reservations:", reservations)
 
       const isAvailable = checkTimeSlotAvailability(startTime, endTime, reservations || [])
       setTimeSlotAvailable(isAvailable)
@@ -254,6 +265,12 @@ export function BookingForm({
       const endDateTime = new Date(selectedDate)
       endDateTime.setHours(endHour, endMinute, 0, 0)
 
+      console.log("Submitting reservation:", {
+        roomId,
+        startDateTime: startDateTime.toISOString(),
+        endDateTime: endDateTime.toISOString()
+      })
+
       // Double-check for overlapping reservations
       const { data: latestReservations, error: reservationError } = await supabase
         .from("reservations")
@@ -262,7 +279,12 @@ export function BookingForm({
         .gte("start_time", startDateTime.toISOString())
         .lte("end_time", endDateTime.toISOString())
 
-      if (reservationError) throw reservationError
+      if (reservationError) {
+        console.error("Error checking latest reservations:", reservationError)
+        throw reservationError
+      }
+
+      console.log("Latest reservations:", latestReservations)
 
       const isAvailable = checkTimeSlotAvailability(startTime, endTime, latestReservations || [])
 
@@ -293,7 +315,10 @@ export function BookingForm({
         status: "confirmed"
       })
 
-      if (insertError) throw insertError
+      if (insertError) {
+        console.error("Error inserting reservation:", insertError)
+        throw insertError
+      }
 
       toast({
         title: "Booking Successful",

@@ -61,7 +61,7 @@ const MyReservations: React.FC = () => {
         return
       }
 
-      const now = new Date().toISOString()
+      console.log("Fetching reservations for user:", session.user.id)
 
       const { data: reservations, error } = await supabase
         .from("reservations")
@@ -79,10 +79,19 @@ const MyReservations: React.FC = () => {
         .eq("user_id", session.user.id)
         .order("start_time", { ascending: true })
 
-      if (error) throw error
+      if (error) {
+        console.error("Error fetching reservations:", error)
+        throw error
+      }
 
+      console.log("Fetched reservations:", reservations)
+
+      const now = new Date().toISOString()
       const upcoming = reservations.filter((r: Reservation) => r.start_time >= now)
       const past = reservations.filter((r: Reservation) => r.start_time < now)
+
+      console.log("Upcoming reservations:", upcoming)
+      console.log("Past reservations:", past)
 
       setUpcomingReservations(upcoming)
       setPastReservations(past)
