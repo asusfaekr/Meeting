@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Users } from "lucide-react"
 import { format } from "date-fns"
 import { useToast } from "@/hooks/use-toast"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useSupabase } from "@/lib/supabase-provider"
 import {
   Dialog,
@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle, Loader2 } from "lucide-react"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
 interface Room {
   id: string
@@ -30,13 +31,14 @@ interface Room {
   location: string
   features: string[] | null
   photo_url: string | null
+  floor: string
 }
 
 interface RoomListProps {
   rooms: Room[]
   selectedDate: Date
-  startTime?: string
-  endTime?: string
+  startTime: string
+  endTime: string
 }
 
 export function RoomList({ rooms, selectedDate, startTime, endTime }: RoomListProps) {
@@ -49,6 +51,76 @@ export function RoomList({ rooms, selectedDate, startTime, endTime }: RoomListPr
   const [attendees, setAttendees] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [availableRooms, setAvailableRooms] = useState<Room[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const supabaseClient = createClientComponentClient()
+
+  useEffect(() => {
+    const fetchAvailableRooms = async () => {
+      try {
+        setIsLoading(true)
+        setError(null)
+
+        if (!startTime || !endTime) {
+          setAvailableRooms(rooms)
+          return
+        }
+
+        // 선택된 날짜와 시간을 Date 객체로 변환
+        const [startHour, startMinute] = startTime.split(":").map(Number)
+        const [endHour, endMinute] = endTime.split(":").map(Number)
+
+        const requestStartTime = new Date(selectedDate)
+        requestStartTime.setHours(startHour, startMinute, 0, 0)
+        requestStartTime.setHours(requestStartTime.getHours() - 9) // UTC로 변환
+
+        const requestEndTime = new Date(selectedDate)
+        requestEndTime.setHours(endHour, endMinute, 0, 0)
+        requestEndTime.setHours(requestEndTime.getHours() - 9) // UTC로 변환
+
+        console.log("Checking availability for time range:", {
+          start: requestStartTime.toISOString(),
+          end: requestEndTime.toISOString()
+        })
+
+        // 해당 시간대의 예약 정보 가져오기
+        const { data: reservations, error: reservationsError } = await supabaseClient
+          .from("reservations")
+          .select("*")
+          .gte("start_time", requestStartTime.toISOString())
+          .lte("end_time", requestEndTime.toISOString())
+
+        if (reservationsError) {
+          console.error("Reservations error:", reservationsError)
+          throw reservationsError
+        }
+
+        console.log("Found reservations:", reservations)
+
+        // 예약이 없는 회의실만 필터링
+        const reservedRoomIds = new Set(reservations?.map((res) => res.room_id) || [])
+        const available = rooms.filter((room) => !reservedRoomIds.has(room.id))
+
+        console.log("Available rooms:", available)
+
+        setAvailableRooms(available)
+
+        // 로그 추가
+        console.log("Room List - Available Rooms:", available.length)
+        console.log("Room List - Selected Date:", format(selectedDate, "yyyy-MM-dd"))
+        console.log("Room List - Time Range:", `${startTime} - ${endTime}`)
+        console.log("Room List - Available Room Details:", available)
+
+      } catch (err) {
+        console.error("Error fetching available rooms:", err)
+        setError("사용 가능한 회의실을 불러오는 중 오류가 발생했습니다.")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchAvailableRooms()
+  }, [rooms, selectedDate, startTime, endTime, supabaseClient])
 
   // Function to open the booking dialog
   const handleBookNow = (room: Room) => {
@@ -143,60 +215,56 @@ export function RoomList({ rooms, selectedDate, startTime, endTime }: RoomListPr
     }
   }
 
-  const availableRoomsTitle = startTime && endTime ? `Available Rooms (${startTime} - ${endTime})` : "Available Rooms"
+  // Format the date and time for display
+  const displayDateTime = useMemo(() => {
+    const date = format(selectedDate, "EEEE, MMMM d, yyyy")
+    return `${date} from ${startTime} to ${endTime}`
+  }, [selectedDate, startTime, endTime])
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-32">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return <div className="text-red-500">{error}</div>
+  }
 
   return (
     <>
       <Card>
         <CardHeader>
-          <CardTitle>{availableRoomsTitle}</CardTitle>
+          <CardTitle>Available Rooms</CardTitle>
+          <p className="text-sm text-gray-500">{displayDateTime}</p>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {rooms.length > 0 ? (
-              rooms.map((room) => (
-                <div key={room.id} className="border rounded-lg p-4">
-                  <div className="flex justify-between items-start mb-2">
+            {availableRooms.length === 0 ? (
+              <p className="text-center text-gray-500">선택한 시간에 사용 가능한 회의실이 없습니다.</p>
+            ) : (
+              availableRooms.map((room) => (
+                <div
+                  key={room.id}
+                  className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <div>
                     <h3 className="font-medium">{room.name}</h3>
-                    <div className="flex items-center text-sm text-gray-500">
-                      <Users className="h-4 w-4 mr-1" />
-                      {room.capacity} people
-                    </div>
+                    <p className="text-sm text-gray-500">
+                      Floor {room.floor} • Capacity: {room.capacity} people
+                    </p>
                   </div>
-
-                  <p className="text-sm text-gray-500 mb-2">Location: {room.location}</p>
-
-                  {/* Room photo with error handling */}
-                  <div className="mb-3 relative w-full h-40 bg-gray-100 rounded overflow-hidden">
-                    <Image
-                      src={room.photo_url || "/placeholder.svg?height=160&width=320"}
-                      alt={room.name}
-                      fill
-                      className="object-cover"
-                      onError={(e) => {
-                        // Fallback to placeholder on error
-                        e.currentTarget.src = "/placeholder.svg?height=160&width=320"
-                      }}
-                    />
-                  </div>
-
-                  {room.features && room.features.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mb-3">
-                      {room.features.map((feature, index) => (
-                        <Badge key={index} variant="outline">
-                          {feature}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
-
-                  <Button size="sm" onClick={() => handleBookNow(room)}>
+                  <Button
+                    variant="default"
+                    onClick={() => handleBookNow(room)}
+                    className="bg-blue-500 hover:bg-blue-600"
+                  >
                     Book Now
                   </Button>
                 </div>
               ))
-            ) : (
-              <div className="text-center py-8 text-gray-500">No rooms available for the selected time</div>
             )}
           </div>
         </CardContent>

@@ -1,156 +1,212 @@
-import { createServerSupabaseClient } from "@/lib/supabase-server"
-import { DailySchedule } from "@/components/dashboard/daily-schedule"
+"use client"
+
+import { useState, useEffect } from "react"
+import { BookingForm } from "@/components/dashboard/booking-form"
 import { RoomList } from "@/components/dashboard/room-list"
-import { DashboardDateDisplay } from "@/components/dashboard/dashboard-date-display"
-import { TimeRangeFilter } from "@/components/dashboard/time-range-filter"
-import { format, addHours } from "date-fns"
-import { cache } from "react"
+import { DailySchedule } from "@/components/dashboard/daily-schedule"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { format } from "date-fns"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { useRouter } from "next/navigation"
 
-// Cache the data fetching to prevent excessive requests
-const getRooms = cache(async (supabase: any) => {
-  const { data } = await supabase.from("meeting_rooms").select("*").eq("is_active", true).order("name")
-  return data || []
-})
+interface Reservation {
+  id: string
+  room_id: string
+  title: string
+  start_time: string
+  end_time: string
+  meeting_rooms: {
+    name: string
+  }
+  users: {
+    first_name: string
+    last_name: string
+  }
+}
 
-const getReservations = cache(async (supabase: any, startOfDay: string, endOfDay: string) => {
-  const { data } = await supabase
-    .from("reservations")
-    .select(`
-      *,
-      meeting_rooms (name),
-      users (first_name, last_name)
-    `)
-    .gte("start_time", startOfDay)
-    .lte("end_time", endOfDay)
-    .order("start_time")
+interface Room {
+  id: string
+  name: string
+  capacity: number
+  floor: string
+}
 
-  return data || []
-})
+export default function DashboardPage() {
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date())
+  const [reservations, setReservations] = useState<Reservation[]>([])
+  const [rooms, setRooms] = useState<Room[]>([])
+  const [startTime, setStartTime] = useState<string>("")
+  const [endTime, setEndTime] = useState<string>("")
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const router = useRouter()
+  const supabase = createClientComponentClient()
 
-export default async function DashboardPage({
-  searchParams,
-}: {
-  searchParams: { date?: string; startTime?: string; endTime?: string }
-}) {
-  const supabase = createServerSupabaseClient()
+  // 오늘의 예약 정보 가져오기
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setIsLoading(true)
+        setError(null)
 
-  // Get selected date from query params or use today
-  const selectedDate = searchParams.date ? new Date(`${searchParams.date}T00:00:00`) : new Date()
+        // 현재 날짜의 시작과 끝 시간 계산 (KST 기준)
+        const startOfDay = new Date(selectedDate)
+        startOfDay.setHours(0, 0, 0, 0)
+        startOfDay.setHours(startOfDay.getHours() - 9) // UTC로 변환
 
-  // Format date for database query
-  const dateString = format(selectedDate, "yyyy-MM-dd")
-  const startOfDay = `${dateString}T00:00:00.000Z`
-  const endOfDay = `${dateString}T23:59:59.999Z`
+        const endOfDay = new Date(selectedDate)
+        endOfDay.setHours(23, 59, 59, 999)
+        endOfDay.setHours(endOfDay.getHours() - 9) // UTC로 변환
 
-  // Calculate default time range based on current time (if not provided in URL)
-  const now = new Date()
-  let defaultStartTime: string
-  let defaultEndTime: string
+        console.log("Fetching data for date:", format(selectedDate, "yyyy-MM-dd"))
+        console.log("Start of day (UTC):", startOfDay.toISOString())
+        console.log("End of day (UTC):", endOfDay.toISOString())
 
-  if (!searchParams.startTime || !searchParams.endTime) {
-    // Get current time + 1 hour for start time
-    const oneHourLater = addHours(now, 1)
+        // 예약 정보 가져오기
+        const { data: reservationsData, error: reservationsError } = await supabase
+          .from("reservations")
+          .select(`
+            id,
+            room_id,
+            title,
+            start_time,
+            end_time,
+            user_id,
+            users (
+              email,
+              first_name,
+              last_name
+            ),
+            meeting_rooms (
+              name,
+              location,
+              capacity
+            )
+          `)
+          .gte("start_time", startOfDay.toISOString())
+          .lte("end_time", endOfDay.toISOString())
+          .order("start_time", { ascending: true })
 
-    // Round to nearest 30 minutes
-    const startHour = oneHourLater.getHours()
-    const startMinute = Math.floor(oneHourLater.getMinutes() / 30) * 30
+        if (reservationsError) {
+          console.error("Reservations error:", reservationsError)
+          throw reservationsError
+        }
 
-    // Format the start time
-    defaultStartTime = `${startHour.toString().padStart(2, "0")}:${startMinute.toString().padStart(2, "0")}`
+        // 회의실 정보 가져오기
+        const { data: roomsData, error: roomsError } = await supabase
+          .from("meeting_rooms")
+          .select(`
+            id,
+            name,
+            capacity,
+            location,
+            features,
+            is_active
+          `)
+          .eq("is_active", true)
+          .order("name", { ascending: true })
 
-    // Calculate end time (1 hour after start time)
-    const endTime = new Date(oneHourLater)
-    endTime.setHours(startHour + 1)
-    endTime.setMinutes(startMinute)
+        if (roomsError) {
+          console.error("Rooms error:", roomsError)
+          throw roomsError
+        }
 
-    defaultEndTime = `${endTime.getHours().toString().padStart(2, "0")}:${startMinute.toString().padStart(2, "0")}`
+        console.log("Fetched reservations:", reservationsData)
+        console.log("Fetched rooms:", roomsData)
 
-    // Ensure times are within business hours (8:00-18:00)
-    if (startHour < 8) {
-      defaultStartTime = "08:00"
-      defaultEndTime = "09:00"
-    } else if (startHour >= 17) {
-      defaultStartTime = "17:00"
-      defaultEndTime = "18:00"
+        setReservations(reservationsData || [])
+        setRooms(roomsData || [])
+
+        // 로그 추가
+        console.log("Dashboard - Selected Date:", format(selectedDate, "yyyy-MM-dd"))
+        console.log("Dashboard - Reservations:", reservationsData?.length || 0)
+        console.log("Dashboard - Rooms:", roomsData?.length || 0)
+        console.log("Dashboard - Reservation Details:", reservationsData)
+
+      } catch (err) {
+        console.error("Error fetching data:", err)
+        setError("데이터를 불러오는 중 오류가 발생했습니다.")
+      } finally {
+        setIsLoading(false)
+      }
     }
+
+    fetchData()
+  }, [selectedDate, supabase])
+
+  // 날짜 변경 핸들러
+  const handleDateChange = (date: Date) => {
+    setSelectedDate(date)
   }
 
-  // Get time range from query params or use defaults
-  const startTime = searchParams.startTime || defaultStartTime
-  const endTime = searchParams.endTime || defaultEndTime
+  // 시간 변경 핸들러
+  const handleTimeChange = (start: string, end: string) => {
+    setStartTime(start)
+    setEndTime(end)
+  }
 
-  // Fetch data with caching to prevent excessive requests
-  const rooms = await getRooms(supabase)
-  const reservations = await getReservations(supabase, startOfDay, endOfDay)
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    )
+  }
 
-  // Filter available rooms based on time range
-  let availableRooms = rooms || []
-
-  if (startTime && endTime) {
-    // Convert time strings to Date objects for comparison
-    const [startHour, startMinute] = startTime.split(":").map(Number)
-    const [endHour, endMinute] = endTime.split(":").map(Number)
-
-    const requestStartTime = new Date(selectedDate)
-    requestStartTime.setHours(startHour, startMinute, 0, 0)
-
-    const requestEndTime = new Date(selectedDate)
-    requestEndTime.setHours(endHour, endMinute, 0, 0)
-
-    // Filter out rooms that have reservations overlapping with the selected time range
-    availableRooms =
-      rooms?.filter((room) => {
-        // Get all reservations for this room on the selected date
-        const roomReservations = reservations?.filter((res) => res.room_id === room.id) || []
-
-        // If the room has no reservations, it's available
-        if (roomReservations.length === 0) return true
-
-        // Check if any reservation overlaps with the selected time range
-        const hasOverlap = roomReservations.some((res) => {
-          const resStartTime = new Date(res.start_time)
-          const resEndTime = new Date(res.end_time)
-
-          // Check for overlap:
-          // If the requested start time is before the reservation end time
-          // AND the requested end time is after the reservation start time
-          // then there is an overlap
-          return (
-            (requestStartTime < resEndTime && requestEndTime > resStartTime) ||
-            // Also check for exact matches
-            requestStartTime.getTime() === resStartTime.getTime() ||
-            requestEndTime.getTime() === resEndTime.getTime()
-          )
-        })
-
-        // Return true if there's no overlap (room is available)
-        return !hasOverlap
-      }) || []
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-red-500">{error}</div>
+      </div>
+    )
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-        <DashboardDateDisplay initialDate={selectedDate} />
+    <div className="container mx-auto py-8 space-y-8">
+      <h1 className="text-3xl font-bold">회의실 예약 대시보드</h1>
+      
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <Card>
+          <CardHeader>
+            <CardTitle>예약하기</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BookingForm
+              onDateChange={handleDateChange}
+              onTimeChange={handleTimeChange}
+              selectedDate={selectedDate}
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>사용 가능한 회의실</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <RoomList
+              rooms={rooms}
+              selectedDate={selectedDate}
+              startTime={startTime}
+              endTime={endTime}
+            />
+          </CardContent>
+        </Card>
       </div>
 
-      <TimeRangeFilter initialStartTime={startTime} initialEndTime={endTime} selectedDate={selectedDate} />
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-2 space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>일일 스케줄</CardTitle>
+        </CardHeader>
+        <CardContent>
           <DailySchedule
-            reservations={reservations || []}
-            rooms={rooms || []}
+            reservations={reservations}
+            rooms={rooms}
             selectedDate={selectedDate}
-            dateString={dateString}
+            dateString={format(selectedDate, "yyyy-MM-dd")}
           />
-        </div>
-
-        <div>
-          <RoomList rooms={availableRooms} selectedDate={selectedDate} startTime={startTime} endTime={endTime} />
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }

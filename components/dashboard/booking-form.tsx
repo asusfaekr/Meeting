@@ -44,40 +44,82 @@ export function BookingForm({
   const [description, setDescription] = useState("")
   const [roomId, setRoomId] = useState(selectedRoomId || "")
   const [startTime, setStartTime] = useState(() => {
+    // 현재 시간을 한국 시간(KST)으로 설정
     const now = new Date()
-    const minutes = now.getMinutes()
-    const roundedMinutes = Math.ceil(minutes / 30) * 30
-    const hours = now.getHours()
+    const kstOffset = 9 * 60 * 60 * 1000 // KST는 UTC+9
+    const kstNow = new Date(now.getTime() + kstOffset)
     
-    // 30분이 넘어가면 다음 시간으로 설정
+    // 30분 단위로 올림
+    const minutes = kstNow.getMinutes()
+    const roundedMinutes = Math.ceil(minutes / 30) * 30
+    const hours = kstNow.getHours()
+    
+    // 30분이 60분이 되면 시간을 1시간 증가시키고 분을 0으로 설정
     if (roundedMinutes === 60) {
-      now.setHours(hours + 1)
-      now.setMinutes(0)
+      kstNow.setHours(hours + 1)
+      kstNow.setMinutes(0)
     } else {
-      now.setMinutes(roundedMinutes)
+      kstNow.setMinutes(roundedMinutes)
     }
     
-    return format(now, "HH:mm")
+    // 8시 이전이면 8시로 설정
+    if (kstNow.getHours() < 8) {
+      kstNow.setHours(8)
+      kstNow.setMinutes(0)
+    }
+    
+    // 17시 이후면 다음 날 8시로 설정
+    if (kstNow.getHours() >= 17) {
+      kstNow.setDate(kstNow.getDate() + 1)
+      kstNow.setHours(8)
+      kstNow.setMinutes(0)
+    }
+    
+    return format(kstNow, "HH:mm")
   })
 
   const [endTime, setEndTime] = useState(() => {
+    // 현재 시간을 한국 시간(KST)으로 설정
     const now = new Date()
-    const minutes = now.getMinutes()
-    const roundedMinutes = Math.ceil(minutes / 30) * 30
-    const hours = now.getHours()
+    const kstOffset = 9 * 60 * 60 * 1000 // KST는 UTC+9
+    const kstNow = new Date(now.getTime() + kstOffset)
     
-    // 30분이 넘어가면 다음 시간으로 설정
+    // 30분 단위로 올림
+    const minutes = kstNow.getMinutes()
+    const roundedMinutes = Math.ceil(minutes / 30) * 30
+    const hours = kstNow.getHours()
+    
+    // 30분이 60분이 되면 시간을 1시간 증가시키고 분을 0으로 설정
     if (roundedMinutes === 60) {
-      now.setHours(hours + 1)
-      now.setMinutes(0)
+      kstNow.setHours(hours + 1)
+      kstNow.setMinutes(0)
     } else {
-      now.setMinutes(roundedMinutes)
+      kstNow.setMinutes(roundedMinutes)
     }
     
-    // 종료 시간은 시작 시간에서 1시간 후
-    now.setHours(now.getHours() + 1)
+    // 8시 이전이면 9시로 설정
+    if (kstNow.getHours() < 8) {
+      kstNow.setHours(9)
+      kstNow.setMinutes(0)
+    }
     
-    return format(now, "HH:mm")
+    // 17시 이후면 다음 날 9시로 설정
+    if (kstNow.getHours() >= 17) {
+      kstNow.setDate(kstNow.getDate() + 1)
+      kstNow.setHours(9)
+      kstNow.setMinutes(0)
+    } else {
+      // 종료 시간은 시작 시간에서 1시간 후
+      kstNow.setHours(kstNow.getHours() + 1)
+      
+      // 18시를 넘어가면 18시로 설정
+      if (kstNow.getHours() > 18) {
+        kstNow.setHours(18)
+        kstNow.setMinutes(0)
+      }
+    }
+    
+    return format(kstNow, "HH:mm")
   })
 
   const [attendees, setAttendees] = useState("")

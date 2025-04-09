@@ -60,64 +60,74 @@ export default function MyReservations() {
   }, [])
 
   const fetchReservations = async () => {
-    setLoading(true)
     try {
-      const { data: { session } } = await supabase.auth.getSession()
+      setLoading(true)
       
-      if (!session) {
-        router.push("/login")
+      // 현재 사용자의 세션 가져오기
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+      const session = sessionData?.session
+      
+      if (sessionError) {
+        console.error("세션 오류:", sessionError)
+        toast({
+          title: "인증 오류",
+          description: "세션을 가져오는 중 오류가 발생했습니다.",
+          variant: "destructive",
+        })
         return
       }
-
-      // 한국 시간대로 현재 시간 설정
+      
+      if (!session) {
+        console.error("사용자가 로그인하지 않았습니다")
+        toast({
+          title: "인증 필요",
+          description: "예약을 보려면 로그인이 필요합니다.",
+          variant: "destructive",
+        })
+        return
+      }
+      
+      // 현재 날짜 기준으로 예약 가져오기
       const now = new Date()
-      const kstOffset = 9 * 60 * 60 * 1000 // KST는 UTC+9
-      const kstNow = new Date(now.getTime() + kstOffset)
-
       const { data: reservations, error } = await supabase
         .from("reservations")
         .select(`
-          id,
-          title,
-          description,
-          start_time,
-          end_time,
-          attendees,
-          meeting_rooms (
-            name
-          )
+          *,
+          meeting_rooms (name)
         `)
         .eq("user_id", session.user.id)
         .order("start_time", { ascending: true })
-
-      if (error) throw error
-
-      if (!reservations || reservations.length === 0) {
-        setUpcomingReservations([])
-        setPastReservations([])
+      
+      if (error) {
+        console.error("예약 가져오기 오류:", error)
+        toast({
+          title: "데이터 오류",
+          description: "예약 정보를 가져오는 중 오류가 발생했습니다.",
+          variant: "destructive",
+        })
         return
       }
-
-      // 한국 시간 기준으로 예약 분류
-      const upcoming = reservations.filter((r: Reservation) => {
-        const reservationTime = new Date(r.start_time)
-        const kstReservationTime = new Date(reservationTime.getTime() + kstOffset)
-        return kstReservationTime >= kstNow
+      
+      // 예약을 현재 시간 기준으로 분류
+      const upcoming: Reservation[] = []
+      const past: Reservation[] = []
+      
+      reservations?.forEach((reservation) => {
+        const startTime = new Date(reservation.start_time)
+        if (startTime >= now) {
+          upcoming.push(reservation)
+        } else {
+          past.push(reservation)
+        }
       })
-
-      const past = reservations.filter((r: Reservation) => {
-        const reservationTime = new Date(r.start_time)
-        const kstReservationTime = new Date(reservationTime.getTime() + kstOffset)
-        return kstReservationTime < kstNow
-      })
-
+      
       setUpcomingReservations(upcoming)
       setPastReservations(past)
     } catch (error) {
-      console.error("Error fetching reservations:", error)
+      console.error("예약 가져오기 오류:", error)
       toast({
-        title: "Error",
-        description: "Failed to fetch reservations. Please try again.",
+        title: "오류",
+        description: "예약 정보를 가져오는 중 오류가 발생했습니다.",
         variant: "destructive",
       })
     } finally {

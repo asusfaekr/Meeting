@@ -1,14 +1,10 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { format } from "date-fns"
-
-interface Room {
-  id: string
-  name: string
-}
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
 interface Reservation {
   id: string
@@ -25,6 +21,11 @@ interface Reservation {
   }
 }
 
+interface Room {
+  id: string
+  name: string
+}
+
 interface DailyScheduleProps {
   reservations: Reservation[]
   rooms: Room[]
@@ -33,126 +34,119 @@ interface DailyScheduleProps {
 }
 
 export function DailySchedule({ reservations, rooms, selectedDate, dateString }: DailyScheduleProps) {
-  const [selectedReservation, setSelectedReservation] = useState<Reservation | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const supabase = createClientComponentClient()
 
-  // Business hours from 8:00 to 18:00
-  const hours = useMemo(() => Array.from({ length: 11 }, (_, i) => i + 8), [])
+  // 시간 그리드 생성 (8:00 AM - 6:00 PM)
+  const timeSlots = useMemo(() => {
+    const slots = []
+    for (let hour = 8; hour <= 18; hour++) {
+      slots.push(`${hour.toString().padStart(2, '0')}:00`)
+      if (hour !== 18) {
+        slots.push(`${hour.toString().padStart(2, '0')}:30`)
+      }
+    }
+    return slots
+  }, [])
 
-  // Calculate position and width for a reservation bar
+  // 예약된 시간의 위치와 너비 계산
   const getReservationStyle = (reservation: Reservation) => {
-    const start = new Date(reservation.start_time)
-    const end = new Date(reservation.end_time)
+    const startTime = new Date(reservation.start_time)
+    const endTime = new Date(reservation.end_time)
     
-    const startHour = start.getHours()
-    const startMinute = start.getMinutes()
-    const endHour = end.getHours()
-    const endMinute = end.getMinutes()
-
-    // Calculate position and width based on time
-    const startPosition = ((startHour - 9) * 60 + startMinute) / (10 * 60) * 100
-    const endPosition = ((endHour - 9) * 60 + endMinute) / (10 * 60) * 100
+    // KST로 변환 (UTC+9)
+    startTime.setHours(startTime.getHours() + 9)
+    endTime.setHours(endTime.getHours() + 9)
+    
+    const startHour = startTime.getHours()
+    const startMinute = startTime.getMinutes()
+    const endHour = endTime.getHours()
+    const endMinute = endTime.getMinutes()
+    
+    console.log("Calculating style for reservation:", {
+      id: reservation.id,
+      start: `${startHour}:${startMinute}`,
+      end: `${endHour}:${endMinute}`
+    })
+    
+    const startPosition = ((startHour - 8) * 2 + (startMinute / 30)) * 50
+    const endPosition = ((endHour - 8) * 2 + (endMinute / 30)) * 50
     const width = endPosition - startPosition
-
+    
     return {
-      left: `${startPosition}%`,
-      width: `${width}%`,
+      left: `${startPosition}px`,
+      width: `${width}px`,
     }
   }
 
-  // Memoize room reservations to improve performance
-  const roomReservationsMap = useMemo(() => {
-    const map = new Map<string, Reservation[]>()
+  // 로그 추가
+  console.log("Daily Schedule - Selected Date:", format(selectedDate, "yyyy-MM-dd"))
+  console.log("Daily Schedule - Reservations:", reservations.length)
+  console.log("Daily Schedule - Rooms:", rooms.length)
+  console.log("Daily Schedule - Reservation Details:", reservations)
 
-    rooms.forEach((room) => {
-      const roomReservations = reservations.filter((res) => res.room_id === room.id)
-      map.set(room.id, roomReservations)
-    })
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-32">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    )
+  }
 
-    return map
-  }, [rooms, reservations])
-
-  // Format the date for display
-  const displayDate = useMemo(() => {
-    const date = new Date(`${dateString}T00:00:00`)
-    return format(date, "EEEE, MMMM d, yyyy")
-  }, [dateString])
+  if (error) {
+    return <div className="text-red-500">{error}</div>
+  }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{displayDate} Schedule</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="relative">
-          {/* Time indicators */}
-          <div className="flex border-b mb-2">
-            <div className="w-32"></div>
-            <div className="flex-1 flex">
-              {hours.map((hour: number) => (
-                <div key={hour} className="flex-1 text-center text-xs text-gray-500">
-                  {hour}:00
-                </div>
-              ))}
+    <div className="relative">
+      {/* 시간 그리드 */}
+      <div className="grid grid-cols-[100px_1fr] gap-4">
+        <div className="space-y-2">
+          {timeSlots.map((time) => (
+            <div key={time} className="h-[50px] text-sm text-gray-500">
+              {time}
             </div>
-          </div>
-
-          {/* Room rows */}
+          ))}
+        </div>
+        
+        {/* 회의실 목록과 예약 표시 */}
+        <div className="relative">
           {rooms.map((room) => {
-            const roomReservations = roomReservationsMap.get(room.id) || []
-
+            const roomReservations = reservations.filter((r) => r.room_id === room.id)
+            console.log(`Room ${room.name} has ${roomReservations.length} reservations`)
+            
             return (
-              <div key={room.id} className="flex items-center h-12 mb-2">
-                <div className="w-32 font-medium truncate pr-2">{room.name}</div>
-                <div className="flex-1 relative h-8 bg-gray-100 rounded">
-                  {/* Time grid lines */}
-                  {hours.map((hour: number, index: number) => (
-                    <div
-                      key={hour}
-                      className={`absolute top-0 bottom-0 w-px bg-gray-300 ${index === 0 ? "left-0" : ""}`}
-                      style={{ left: `${(index / 10) * 100}%` }}
-                    />
-                  ))}
-
-                  <TooltipProvider>
-                    {roomReservations.map((reservation: Reservation) => (
-                      <Tooltip key={reservation.id}>
+              <div key={room.id} className="h-[50px] border-b">
+                <div className="relative h-full">
+                  {roomReservations.map((reservation) => (
+                    <TooltipProvider key={reservation.id}>
+                      <Tooltip>
                         <TooltipTrigger asChild>
                           <div
-                            className="absolute h-full bg-blue-500 rounded cursor-pointer z-10"
+                            className="absolute top-0 h-full bg-blue-500/20 border border-blue-500 rounded cursor-pointer hover:bg-blue-500/30"
                             style={getReservationStyle(reservation)}
-                            onClick={() => setSelectedReservation(reservation)}
-                          >
-                            <div className="h-full w-full overflow-hidden text-white text-xs px-2 flex items-center">
-                              {reservation.title}
-                            </div>
-                          </div>
+                          />
                         </TooltipTrigger>
                         <TooltipContent>
-                          <div className="space-y-1">
-                            <p className="font-medium">{reservation.title}</p>
-                            <p className="text-xs">
-                              {format(new Date(reservation.start_time), "h:mm a")} -
-                              {format(new Date(reservation.end_time), "h:mm a")}
-                            </p>
-                            <p className="text-xs">
-                              Booked by: {reservation.users.first_name} {reservation.users.last_name}
-                            </p>
-                          </div>
+                          <p className="font-medium">{reservation.title}</p>
+                          <p className="text-sm text-gray-500">
+                            {reservation.users?.first_name} {reservation.users?.last_name}
+                          </p>
+                          <p className="text-sm text-gray-500">
+                            {format(new Date(reservation.start_time), "HH:mm")} -{" "}
+                            {format(new Date(reservation.end_time), "HH:mm")}
+                          </p>
                         </TooltipContent>
                       </Tooltip>
-                    ))}
-                  </TooltipProvider>
+                    </TooltipProvider>
+                  ))}
                 </div>
               </div>
             )
           })}
-
-          {/* No reservations message */}
-          {reservations.length === 0 && (
-            <div className="text-center py-8 text-gray-500">No reservations for this date</div>
-          )}
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   )
 }
